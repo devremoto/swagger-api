@@ -1,4 +1,5 @@
 export class Response {
   statusCode: string;
-  ref: string;
+  ref?: string;
+  description: string;
 }
