@@ -18,9 +18,9 @@ export class SwaggerService {
         const response = await axios.get(preview.url);
         preview.content = response.data;
       }
+
       return this.generateReadme(preview);
     } catch (error) {
-      console.log(error);
       throw new Error('Error fetching Swagger document');
     }
   }
@@ -43,7 +43,6 @@ export class SwaggerService {
       sourceJson = source;
       source = json = JSON.stringify(sourceJson);
     }
-    console.log('aaaaaa');
     this.parseJson(sourceJson);
     const readme = `
 # API Documentation
@@ -78,26 +77,26 @@ ${this.generateSchemasUi()}
         description: (<any>schemaDetails).description,
         properties: [],
       };
-
-      const properties = (<any>schemaDetails).properties || {
-          enum: <any>schemaDetails,
-        } || { array: (<any>schemaDetails).items };
+      console.log((<any>schemaDetails))
+      const properties = (<any>schemaDetails).properties || { array: (<any>schemaDetails).items } || { enum: <any>schemaDetails };
       if (properties) {
         for (const [name, propertyDetails] of Object.entries(properties)) {
           const prop: Type = {
             name,
-            ...this.getType(propertyDetails),
+            ...this.formatType(propertyDetails),
           };
           schema.properties.push(prop);
         }
       }
       schemas.push(schema);
     }
-    console.log(schemas);
     return schemas;
   }
 
   private generateSchemasUi() {
+    if (!this.api.schemas.length) {
+      return '';
+    }
     let readmeContent = '\n## Schemas\n\n';
 
     this.api.schemas.forEach((schema) => {
@@ -106,33 +105,10 @@ ${this.generateSchemasUi()}
       readmeContent +=
         '| Property | Type | Description |\n| -------- | ---- | ----------- |\n';
       schema.properties.forEach((x) => {
-        readmeContent += `| ${x.name} | ${x.type || x.refLink || ''} | ${x.description?.replace(/\n/g, '<br />')} |\n`;
+        readmeContent += `| ${x.name} | ${x.refLink || x.ref || ''} | ${(x.description || '')?.replace(/\n/g, '<br />')} |\n`;
       });
     });
-    console.log(readmeContent);
     return readmeContent;
-    // if (!data?.components?.schemas && !data?.definitions) return '';
-
-    // let readmeContent = '\n## Schemas\n\n';
-    // let entries: any = data?.components?.schemas || data?.definitions;
-
-    // for (const [schemaName, schemaDetails] of Object.entries(entries)) {
-    //     readmeContent += `### ${schemaName}\n\n`;
-
-    //     let properties = (<any>schemaDetails).properties || { "enum": (<any>schemaDetails) } || { "array": (<any>schemaDetails).items };
-    //     if (properties) {
-    //         readmeContent += '| Property | Type | Description |\n| -------- | ---- | ----------- |\n';
-
-    //         for (const [propertyName, propertyDetails] of Object.entries(properties)) {
-    //             let description = (<any>schemaDetails).description || '';
-    //             readmeContent += `| ${propertyName} | ${this.formatType(propertyDetails)} | ${description.replace(/\n/g, '<br />') || ''} |\n`;
-    //         }
-    //     } else {
-    //         readmeContent += '-\n';
-    //     }
-    //     readmeContent += '\n';
-    // }
-    // return readmeContent;
   }
 
   getEnv(baseUrl: string) {
@@ -160,7 +136,7 @@ ${this.generateSchemasUi()}
       const value = replaceParam
         ? this.getParameterValue(x)
         : `{${x.name}:${x.schema?.type}}`;
-      replacedPath = replacedPath.replace(`{${x.name}}`, value);
+      replacedPath = replacedPath.replace(`{${x.name}}`, value || x.name);
     });
 
     if (queryParameters.length) {
@@ -168,7 +144,7 @@ ${this.generateSchemasUi()}
         .map((x) => {
           const value = replaceParam
             ? this.getParameterValue(x)
-            : `{${x.name}:${x.schema?.type}}`;
+            : `{${x.name}:${x.schema?.type || x.type}}`;
           return `${x.name}=${value}` || '';
         })
         .join('&');
@@ -185,13 +161,15 @@ ${this.generateSchemasUi()}
       case 'boolean':
         value = true;
         break;
+      case 'number':
       case 'integer':
       case 'int':
       case 'int32':
         value = 1;
         break;
       case 'string':
-        value = `{${schema.name}}`;
+        console.log('schema', schema)
+        value = `{${schema.name || schema.type || ''}}`;
         break;
     }
 
@@ -211,17 +189,19 @@ ${this.generateSchemasUi()}
         for (const [method, details] of Object.entries(methods)) {
           const endpoint: Endpoint = new Endpoint();
           endpoint.path = this.getPath(path, details);
-          endpoint.pathReplaced = this.getPath(path, details, true);
+          endpoint.description = details.description ? (`\n\n${details.description}`)?.replace(/\n/g, '<br />') : '',
+            endpoint.pathReplaced = this.getPath(path, details, true);
           endpoint.method = method.toUpperCase();
           const parameters = details.parameters || [];
 
           endpoint.parameters = parameters.map((x) => {
-            return { ...x, ...this.getType(x) };
+            return { ...x, ...this.formatType(x) };
           });
           endpoint.responses = Object.entries(details.responses).map(
             ([statusCode, responseDetails]: any) => {
               const response: Response = {
-                ...this.getType(responseDetails),
+                ...this.formatType(responseDetails),
+                description: this.typeDescrption(responseDetails)?.replace(/\n/g, '<br />'),
                 statusCode,
               };
               return response;
@@ -243,33 +223,17 @@ ${this.generateSchemasUi()}
         ? `\n\n## Base URL\n\n - ${this.getEnv(baseUrl)} [${baseUrl}](${baseUrl})\n\n`
         : '';
       readmeContent += `## Endpoints\n\n| Path | Method | Parameters ${baseUrl ? ' | Example ' : ''} | Responses |\n| ---- | ------  ${baseUrl ? ' | ---------- ' : ''} | ---------- | --------- |\n`;
+      readmeContent += this.api.endpoints.map(endpoint => {
+        let parameters = endpoint.parameters
+          .map((parameter: any) => `${parameter.in}: ${parameter.name} (${parameter.required ? 'required' : 'optional'})`)
+          .join('<br />')
 
-      for (const [path, methods] of Object.entries(data.paths)) {
-        for (const [method, details] of Object.entries(methods)) {
-          readmeContent += `| ${this.getPath(path, details)} | ${method.toUpperCase()} | `;
-          const parameters = details.parameters
-            ? details.parameters
-                .map(
-                  (parameter: any) =>
-                    `${parameter.in}: ${parameter.name} (${parameter.required ? 'required' : 'optional'})`,
-                )
-                .join('<br />')
-            : '';
-          readmeContent += `${parameters} | `;
-          readmeContent += baseUrl
-            ? `${baseUrl}${this.getPath(path, details, true)} | `
-            : '';
+        let responses = endpoint.responses
+          .map((response: any) => `${response.statusCode}: ${response.description}`)
+          .join('<br /><br />')
+        return `| ${endpoint.path}${endpoint.description} | ${endpoint.method} | ${parameters} ${baseUrl ? ` | ${baseUrl}${endpoint.pathReplaced} ` : ''} | ${responses} |`
+      }).join('\n')
 
-          const responses = Object.entries(details.responses)
-            .map(([statusCode, responseDetails]: any) => {
-              const responseDescription = this.typeDescrption(responseDetails);
-              return `${statusCode}: ${responseDescription}`;
-            })
-            .join(', <br/>');
-
-          readmeContent += `${responses} |\n`;
-        }
-      }
       return readmeContent;
     } catch (error) {
       console.error(error);
@@ -277,20 +241,29 @@ ${this.generateSchemasUi()}
   }
 
   private formatType(details: any) {
-    if (details.$ref) {
+    if (!details) {
+      return;
+    }
+    console.log(details)
+    if (details?.$ref) {
       const ref = details.$ref.split('/').pop();
-      return `[${ref}](#${ref.toLowerCase()})`;
+      details.refLink = `[${ref}](#${ref.toLowerCase()})`;
+      details.ref = details.ref ? details.ref : ref
+      return details;
     }
 
     if (details?.type === 'array') {
       if (details?.items?.$ref) {
         const ref = details?.items?.$ref.split('/').pop();
-        return `[${ref}[]](#${ref.toLowerCase()})`;
+        details.refLink = `[${ref}](#${ref.toLowerCase()})`;
+        details.ref = details.ref ? details.ref : ref;
+        return details;
       }
-      return this.simpleType(details.items);
+      details.ref = details.ref ? details.ref : this.simpleType(details.items)
+      return details;
     }
-
-    return this.simpleType(details);
+    details.ref = details?.ref ? details.ref : this.simpleType(details)
+    return details;
   }
 
   private simpleType(details: any) {
@@ -314,37 +287,14 @@ ${this.generateSchemasUi()}
 
     if (content?.schema?.$ref) {
       const ref = this.parseReference(content?.schema?.$ref);
-      return ` Schema: [${ref}](#${ref.toLowerCase()})`;
+      return ` Schema: [${ref}](#${ref.toLowerCase()})\n${responseDescription}`;
     }
 
     if (content?.schema?.items?.$ref) {
       const ref = this.parseReference(content?.schema?.items?.$ref);
-      return ` Schema: [${ref}[]](#${ref.toLowerCase()})`;
+      return ` Schema: [${ref}[]](#${ref.toLowerCase()})\n${responseDescription}`;
     }
     return responseDescription;
-  }
-
-  private getType(details: any) {
-    const content = details.content
-      ? details?.content['application/json']
-      : details;
-    content.description = content.description || '';
-    if (content?.schema?.$ref) {
-      const ref = this.parseReference(content?.schema?.$ref);
-      if (!content.type) {
-        content.type = ref;
-      }
-      return { ...content, refLink: `[${ref}](#${ref.toLowerCase()})`, ref };
-    }
-
-    if (content?.schema?.items?.$ref) {
-      const ref = this.parseReference(content?.schema?.items?.$ref);
-      if (!content.type) {
-        content.type = ref;
-      }
-      return { ...content, refLink: `[${ref}[]](#${ref.toLowerCase()})`, ref };
-    }
-    return content;
   }
 
   private parseReference($ref: any) {

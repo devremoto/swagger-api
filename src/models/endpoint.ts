@@ -6,4 +6,5 @@ export class Endpoint {
   method: string;
   parameters: any[];
   responses: Response[];
+  description: any;
 }
