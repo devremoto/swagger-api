@@ -38,6 +38,7 @@ export class SwaggerService {
     const readme = `# API Documentation
 ## ${sourceJson.info.title}
 ${sourceJson.info.description ? `${sourceJson.info.description}` : ''}
+
 Version: ${sourceJson.info.version}
 ${this.tableContent(preview.baseUrl)}
 ${this.generateSchemasUi()}
