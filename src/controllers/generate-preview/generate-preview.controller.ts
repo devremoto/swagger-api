@@ -9,7 +9,7 @@ export class GeneratePreviewController {
   @Post()
   async generatePreviewFromUrl(@Body() preview: Preview) {
     try {
-      return this.swaggerService.fetchSwaggerDocument(preview)
+      return this.swaggerService.fetchSwaggerDocument(preview);
     } catch (error) {
       return { error: 'Failed to fetch Swagger document' };
     }
