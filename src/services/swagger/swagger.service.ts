@@ -58,9 +58,11 @@ ${this.generateSchemasUi()}
   }
 
   private generateSchemas(data: any): Schema[] {
-    const entries = data?.components?.schemas || data?.definitions || {};
-    return Object.entries(entries).map(([name, schemaDetails]: any) => {
-
+    try {
+      const entries = data?.components?.schemas || data?.definitions || {};
+      console.log(entries)
+      return Object.entries(entries).map(([name, schemaDetails]: any) => {
+  
       let properties =
         schemaDetails.properties ||
         schemaDetails.items ||
@@ -69,17 +71,20 @@ ${this.generateSchemasUi()}
       if (schemaDetails.enum) {
         properties = { enum: schemaDetails.enum }
       }
-      return {
-        name,
-        description: schemaDetails.description || '',
-        properties: Object.entries(properties).map(
+        return {
+          name,
+          description: schemaDetails.description || '',
+          properties: Object.entries(properties).map(
           ([name, propertyDetails]: any) => ({
-            name,
-            ...this.formatType(propertyDetails),
-          }),
+              name,
+              ...this.formatType(propertyDetails),
+            }),
         ),
-      } as Schema;
-    });
+        } as Schema;
+      });
+    } catch (error) {
+      console.log(error,data);
+    }
   }
 
   private generateSchemasUi() {
