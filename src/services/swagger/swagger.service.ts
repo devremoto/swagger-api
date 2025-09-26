@@ -41,6 +41,7 @@ ${sourceJson.info?.description || ''}
 Version: ${sourceJson.info.version}
 ${this.tableContent(preview.baseUrl)}
 ${this.generateSchemasUi()}
+${this.genereteSecuritySchemesUi()}
 `;
     return {
       source: JSON.stringify(sourceJson),
@@ -53,37 +54,60 @@ ${this.generateSchemasUi()}
     this.api = {
       endpoints: this.generateEndpoints(data),
       schemas: this.generateSchemas(data),
+      securitySchemes: this.securitySchemes(data),
     } as Api;
     return this.api;
   }
+
+  private securitySchemes = (data: any) => {
+    try {
+      return data?.components?.securitySchemes || data?.securityDefinitions || {};
+    } catch (error) {
+      console.log(error, data);
+      return {};
+    }
+  };
+
+  private genereteSecuritySchemesUi() {
+    var securityScheme = this.api?.securitySchemes
+      ? Object.entries(this.api.securitySchemes)
+        .map(([name, scheme]: any) => {
+          return `### ${name}\n\n| Type | Name | In | Description |\n| ---- | ---- | -- | ----------- |\n| ${scheme.type || ''} | ${scheme.name || ''} | ${scheme.in || ''} | ${(scheme.description || '').replace(
+            /\n/g, '<br />'
+          )} |`;
+        })
+      : '';
+    console.log(securityScheme)
+    return securityScheme ? `\n\n## Security Schemes\n\n${securityScheme}` : '';
+  };
 
   private generateSchemas(data: any): Schema[] {
     try {
       const entries = data?.components?.schemas || data?.definitions || {};
       console.log(entries)
       return Object.entries(entries).map(([name, schemaDetails]: any) => {
-  
-      let properties =
-        schemaDetails.properties ||
-        schemaDetails.items ||
-        {};
 
-      if (schemaDetails.enum) {
-        properties = { enum: schemaDetails.enum }
-      }
+        let properties =
+          schemaDetails.properties ||
+          schemaDetails.items ||
+          {};
+
+        if (schemaDetails.enum) {
+          properties = { enum: schemaDetails.enum }
+        }
         return {
           name,
           description: schemaDetails.description || '',
           properties: Object.entries(properties).map(
-          ([name, propertyDetails]: any) => ({
+            ([name, propertyDetails]: any) => ({
               name,
               ...this.formatType(propertyDetails),
             }),
-        ),
+          ),
         } as Schema;
       });
     } catch (error) {
-      console.log(error,data);
+      console.log(error, data);
     }
   }
 

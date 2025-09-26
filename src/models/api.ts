@@ -6,4 +6,5 @@ export class Api {
   version: string;
   endpoints: Endpoint[];
   schemas: Schema[];
+  securitySchemes: any;
 }
