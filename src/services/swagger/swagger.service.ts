@@ -6,18 +6,19 @@ import { Endpoint } from 'src/models/endpoint';
 import { Preview } from 'src/models/preview';
 import { Schema } from 'src/models/schema';
 import { Response } from 'src/models/response';
+import { ReadmeResult } from 'src/models/readmeResult';
 
 @Injectable()
 export class SwaggerService {
   api: Api;
-  async fetchSwaggerDocument(preview: Preview): Promise<any> {
+  async fetchSwaggerDocument(preview: Preview): Promise<ReadmeResult> {
     try {
       if (!preview.content && preview.url) {
         preview.content = (await axios.get(preview.url)).data;
       }
       return this.generateReadme(preview);
     } catch (error) {
-      throw new Error('Error fetching Swagger document');
+      throw new Error(error);
     }
   }
 
@@ -43,11 +44,12 @@ ${this.tableContent(preview.baseUrl)}
 ${this.generateSchemasUi()}
 ${this.genereteSecuritySchemesUi()}
 `;
-    return {
+    const readmeResult: ReadmeResult = {
       source: JSON.stringify(sourceJson),
       sourceJson: JSON.stringify(sourceJson),
       readme,
     };
+    return readmeResult;
   }
 
   parseJson(data: any) {
@@ -63,7 +65,6 @@ ${this.genereteSecuritySchemesUi()}
     try {
       return data?.components?.securitySchemes || data?.securityDefinitions || {};
     } catch (error) {
-      console.log(error, data);
       return {};
     }
   };
@@ -77,14 +78,12 @@ ${this.genereteSecuritySchemesUi()}
           )} |`;
         })
       : '';
-    console.log(securityScheme)
-    return securityScheme ? `\n\n## Security Schemes\n\n${securityScheme}` : '';
+    return securityScheme && securityScheme.length > 0 ? `\n\n## Security Schemes\n\n${securityScheme}` : '';
   };
 
   private generateSchemas(data: any): Schema[] {
     try {
       const entries = data?.components?.schemas || data?.definitions || {};
-      console.log(entries)
       return Object.entries(entries).map(([name, schemaDetails]: any) => {
 
         let properties =
@@ -108,6 +107,7 @@ ${this.genereteSecuritySchemesUi()}
       });
     } catch (error) {
       console.log(error, data);
+      throw new Error(error);
     }
   }
 
@@ -132,12 +132,19 @@ ${this.genereteSecuritySchemesUi()}
         ? `\n\n## Base URL\n\n - ${this.getEnv(baseUrl)} [${baseUrl}](${baseUrl})\n\n`
         : '';
       readmeContent += `## Endpoints\n\n| Path | Method | Parameters ${baseUrl ? ' | Example ' : ''} | Responses |\n| ---- | ------  ${baseUrl ? ' | ---------- ' : ''} | ---------- | --------- |\n`;
+
       readmeContent += this.api.endpoints
         .map((endpoint) => {
           const parameters = endpoint.parameters
             .map(
-              (parameter) =>
-                `${parameter.in}: ${parameter.name} (${parameter.required ? 'required' : 'optional'})`,
+              (parameter) => {
+                if (parameter.$ref || parameter.ref) {
+                  const ref = parameter.$ref?.split('/').pop();
+                  return `${parameter.in || ''}: [${ref}](#${ref ? ref?.toLowerCase() : ''}) (${parameter.required ? 'required' : 'optional'})`;
+                }
+                return `${parameter.in || ''}: ${parameter.name || parameter.ref} (${parameter.required ? 'required' : 'optional'})`;
+              }
+
             )
             .join('<br />');
 
@@ -149,6 +156,7 @@ ${this.genereteSecuritySchemesUi()}
         .join('\n');
     } catch (error) {
       console.error(error);
+      throw new Error(error);
     }
     return readmeContent;
   }
@@ -208,12 +216,17 @@ ${this.genereteSecuritySchemesUi()}
             : ''),
             (endpoint.pathReplaced = this.getPath(path, details, true));
           endpoint.method = method.toUpperCase();
+          details.parameters = (details.parameters || []).length > 0
+            ? details.parameters
+            : this.getParametersFromPath(data.paths, path, method);
+          // Fallback to get parameters from path level if not present in method level
           const parameters = details.parameters || [];
 
           endpoint.parameters = parameters.map((x) => {
             return { ...x, ...this.formatType(x) };
           });
-          endpoint.responses = Object.entries(details.responses).map(
+
+          endpoint.responses = Object.entries(details.responses || []).map(
             ([statusCode, responseDetails]: any) => {
               const response: Response = {
                 ...this.formatType(responseDetails),
@@ -233,6 +246,30 @@ ${this.genereteSecuritySchemesUi()}
       return endpoints;
     } catch (error) {
       console.error(error);
+      throw new Error(error);
+    }
+  }
+
+  private getParametersFromPath(paths: any[], path: string, method: string) {
+    try {
+      if (!paths || !paths[path] || !paths[path][method]) {
+        return [];
+      }
+
+      var obj = paths[path][method];
+      const found = obj.parameters && obj.parameters!.length > 0
+        ? obj.parameters
+        : obj.requestBody?.content['application/json']?.schema;
+      console.log('found', found);
+      return [{ $ref: found["$ref"], required: obj.requestBody?.required || false, in: 'body', name: 'body', ...this.formatType(found) }];
+    } catch (error) {
+
+      //console.error(error);
+      console.log('path', path);
+      console.log('method', method);
+      console.log('paths', JSON.stringify(paths, null, 2));
+
+      return [];
     }
   }
 
@@ -240,11 +277,11 @@ ${this.genereteSecuritySchemesUi()}
     if (!details) {
       return;
     }
-
     if (details?.$ref) {
       const ref = details.$ref.split('/').pop();
+
       details.refLink = `[${ref}](#${ref.toLowerCase()})`;
-      details.ref = details.ref ? details.ref : ref;
+      details.ref = details?.ref ? details.ref : ref;
       return details;
     }
 
@@ -258,9 +295,9 @@ ${this.genereteSecuritySchemesUi()}
       details.ref = details.ref ? details.ref : this.simpleType(details.items);
       return details;
     }
-    //if (details.type) {
-    details.ref = details?.ref ? details.ref : this.simpleType(details);
-    //}
+    if (details.type) {
+      details.ref = details?.ref ? details.ref : this.simpleType(details);
+    }
     return details;
   }
 
